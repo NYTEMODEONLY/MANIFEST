@@ -11,6 +11,11 @@ struct MANIFESTApp: App {
                 .environment(projectStore)
                 .environment(gitHubAuth)
                 .preferredColorScheme(.dark) // Default to dark mode ("Nyte Mode")
+                .task {
+                    // Restore GitHub session after a delay to avoid startup cascade
+                    try? await Task.sleep(for: .seconds(2))
+                    gitHubAuth.restoreSession()
+                }
         }
         .windowStyle(.automatic)
         .defaultSize(width: 1200, height: 800)

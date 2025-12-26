@@ -24,8 +24,8 @@ struct DetailView: View {
 // MARK: - Detail Content
 
 private struct ProjectDetailContent: View {
-    @Environment(ProjectStore.self) private var store
-    @Environment(GitHubAuth.self) private var gitHubAuth
+    // NOTE: Removed @Environment(ProjectStore.self) - no longer needed after removing gitHubStatus call
+    // NOTE: Removed @Environment(GitHubAuth.self) - was unused and causing observation cascade
     let project: Project
 
     var body: some View {
@@ -59,13 +59,8 @@ private struct ProjectDetailContent: View {
         .navigationTitle(project.name)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                // Open on GitHub (if available)
-                if let githubURL = project.gitHubURL {
-                    Link(destination: githubURL) {
-                        Image(systemName: "link")
-                    }
-                    .help("Open on GitHub")
-                }
+                // NOTE: Removed GitHub Link - computed property in toolbar was causing high CPU
+                // Open on GitHub can be added back later with cached URL
 
                 // Open in Finder
                 Button {
@@ -92,16 +87,7 @@ private struct ProjectDetailContent: View {
                 .help("Open in VS Code")
             }
         }
-        // DISABLED FOR DEBUGGING - checkGitHubStatus uses DispatchQueue.main.async
-        // which conflicts with @Observable. Status will show as "unchecked"
-        // .task(id: project.id) {
-        //     try? await Task.sleep(for: .milliseconds(100))
-        //     store.checkGitHubStatus(
-        //         for: project,
-        //         isAuthenticated: gitHubAuth.isAuthenticated,
-        //         token: gitHubAuth.token
-        //     )
-        // }
+        // GitHub status checking removed - was causing observation cascade
     }
 
     // MARK: - Sections
@@ -195,11 +181,13 @@ private struct ProjectDetailContent: View {
                let githubURL = project.gitHubURL,
                let repoName = project.gitHubRepoName {
                 // GitHub repository card (consolidated)
+                // NOTE: Using static .unchecked status to avoid @Observable dictionary observation
+                // that was causing high CPU. GitHub status checking can be re-enabled later.
                 GitHubRepoCard(
                     repoName: repoName,
                     remoteURL: remoteURL,
                     githubURL: githubURL,
-                    status: store.gitHubStatus(for: project)
+                    status: .unchecked
                 )
             } else if project.gitRemoteURL != nil {
                 // Non-GitHub remote

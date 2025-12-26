@@ -4,11 +4,10 @@ import SwiftUI
 struct ContentView: View {
     @Environment(ProjectStore.self) private var store
     @State private var showingSettings = false
-    @State private var hasRestoredAuth = false
 
     var body: some View {
         let _ = print("📱 [ContentView] body evaluated")
-        @Bindable var store = store
+        // NOTE: Removed @Bindable - ContentView only reads from store, never binds
 
         NavigationSplitView {
             SidebarView()
@@ -17,12 +16,9 @@ struct ContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
-            // GitHub account status (leading) - uses its own environment
-            ToolbarItem(placement: .navigation) {
-                GitHubAccountButton {
-                    showingSettings = true
-                }
-            }
+            // NOTE: GitHubAccountButton temporarily removed from toolbar
+            // Having an @Observable-observing view in toolbar causes parent invalidation
+            // Access GitHub settings via the Settings button instead
 
             ToolbarItemGroup(placement: .primaryAction) {
                 // Refresh button
@@ -63,16 +59,7 @@ struct ContentView: View {
             store.restoreIfNeeded()
             print("📱 [ContentView] onAppear complete")
         }
-        // Use task to restore GitHub auth ONCE, outside of body observation
-        .task {
-            guard !hasRestoredAuth else { return }
-            hasRestoredAuth = true
-            // Small delay to let view settle
-            try? await Task.sleep(for: .milliseconds(100))
-            await MainActor.run {
-                // Get auth from environment indirectly via the button's restore
-            }
-        }
+        // NOTE: Removed dead .task block - auth restoration now handled by GitHubAccountButton
         .overlay {
             // Scanning overlay
             if store.isScanning {
