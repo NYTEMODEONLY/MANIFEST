@@ -5,6 +5,7 @@ struct DetailView: View {
     @Environment(ProjectStore.self) private var store
 
     var body: some View {
+        let _ = print("🔍 [DetailView] body evaluated - selectedProject:\(store.selectedProject?.name ?? "nil")")
         Group {
             if let project = store.selectedProject {
                 ProjectDetailContent(project: project)
@@ -28,6 +29,7 @@ private struct ProjectDetailContent: View {
     let project: Project
 
     var body: some View {
+        let _ = print("🔍 [ProjectDetailContent] body evaluated - project:\(project.name)")
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 // Header
@@ -90,16 +92,16 @@ private struct ProjectDetailContent: View {
                 .help("Open in VS Code")
             }
         }
-        .task(id: project.id) {
-            // Small delay to let view settle before making network call
-            try? await Task.sleep(for: .milliseconds(100))
-            // Pass auth state as values, not as object reference
-            store.checkGitHubStatus(
-                for: project,
-                isAuthenticated: gitHubAuth.isAuthenticated,
-                token: gitHubAuth.token
-            )
-        }
+        // DISABLED FOR DEBUGGING - checkGitHubStatus uses DispatchQueue.main.async
+        // which conflicts with @Observable. Status will show as "unchecked"
+        // .task(id: project.id) {
+        //     try? await Task.sleep(for: .milliseconds(100))
+        //     store.checkGitHubStatus(
+        //         for: project,
+        //         isAuthenticated: gitHubAuth.isAuthenticated,
+        //         token: gitHubAuth.token
+        //     )
+        // }
     }
 
     // MARK: - Sections

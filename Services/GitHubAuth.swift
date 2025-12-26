@@ -1,6 +1,44 @@
 import Foundation
 import Security
 
+// MARK: - Module-level constants (completely outside actor isolation)
+private let kTokenKeychainKey = "com.manifest.github.token"
+private let kUsernameKeychainKey = "com.manifest.github.username"
+
+// MARK: - Keychain Helper (no actor, no observable)
+private enum KeychainHelper {
+    static func load(key: String) -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess else { return nil }
+        return result as? Data
+    }
+
+    static func save(data: Data, key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecValueData as String: data
+        ]
+        SecItemDelete(query as CFDictionary)
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    static func delete(key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+}
+
 /// GitHub OAuth authentication using Device Flow
 /// Device Flow is ideal for desktop apps - no redirect URL needed
 @Observable
@@ -29,64 +67,56 @@ final class GitHubAuth {
     private var pollingInterval: Int = 5
     private var pollingTask: Task<Void, Never>?
 
-    // MARK: - Keychain Keys (static to avoid actor isolation issues)
-
-    private static let tokenKeychainKey = "com.manifest.github.token"
-    private static let usernameKeychainKey = "com.manifest.github.username"
-
     // MARK: - Initialization
 
     init() {
-        // Don't load token here - it will be done asynchronously via restoreSession()
+        print("🔐 [GitHubAuth] init()")
     }
 
     // MARK: - Session Restoration
 
     /// Call this after app is ready to restore saved session (async, won't block)
     func restoreSession() {
-        guard !isRestoringSession && !isAuthenticated else { return }
+        print("🔐 [GitHubAuth] restoreSession() called - isRestoringSession:\(isRestoringSession) isAuthenticated:\(isAuthenticated)")
+        guard !isRestoringSession && !isAuthenticated else {
+            print("🔐 [GitHubAuth] restoreSession() - early return (already restoring or authenticated)")
+            return
+        }
         isRestoringSession = true
+        print("🔐 [GitHubAuth] restoreSession() - set isRestoringSession=true, launching detached task")
 
-        // Use Task to properly handle actor isolation
-        Task.detached(priority: .utility) { [weak self] in
-            // Access static keys (no actor isolation needed)
-            let tokenData = Self.loadFromKeychainStatic(key: Self.tokenKeychainKey)
-            let usernameData = Self.loadFromKeychainStatic(key: Self.usernameKeychainKey)
+        // Load from keychain on background task using helper (no actor isolation)
+        Task.detached(priority: .utility) {
+            print("🔐 [GitHubAuth] detached task started - loading from keychain")
+            let tokenData = KeychainHelper.load(key: kTokenKeychainKey)
+            let usernameData = KeychainHelper.load(key: kUsernameKeychainKey)
+            print("🔐 [GitHubAuth] keychain load complete - tokenData:\(tokenData != nil) usernameData:\(usernameData != nil)")
 
             // Update on MainActor
-            await MainActor.run {
-                guard let self = self else { return }
+            await MainActor.run { [weak self] in
+                print("🔐 [GitHubAuth] MainActor.run started")
+                guard let self = self else {
+                    print("🔐 [GitHubAuth] MainActor.run - self is nil, returning")
+                    return
+                }
                 self.isRestoringSession = false
+                print("🔐 [GitHubAuth] set isRestoringSession=false")
 
                 if let tokenData = tokenData,
                    let token = String(data: tokenData, encoding: .utf8) {
+                    print("🔐 [GitHubAuth] found token, setting authenticated=true")
                     self.accessToken = token
                     self.isAuthenticated = true
 
                     if let usernameData = usernameData,
                        let savedUsername = String(data: usernameData, encoding: .utf8) {
+                        print("🔐 [GitHubAuth] found username: \(savedUsername)")
                         self.username = savedUsername
                     }
                 }
+                print("🔐 [GitHubAuth] MainActor.run complete")
             }
         }
-    }
-
-    // MARK: - Static Keychain Access (no actor isolation)
-
-    private static func loadFromKeychainStatic(key: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
     }
 
     // MARK: - Public Methods
@@ -137,8 +167,8 @@ final class GitHubAuth {
 
         // Delete from keychain on background task
         Task.detached(priority: .utility) {
-            Self.deleteFromKeychainStatic(key: Self.tokenKeychainKey)
-            Self.deleteFromKeychainStatic(key: Self.usernameKeychainKey)
+            KeychainHelper.delete(key: kTokenKeychainKey)
+            KeychainHelper.delete(key: kUsernameKeychainKey)
         }
     }
 
@@ -338,39 +368,15 @@ final class GitHubAuth {
     private func saveTokenAsync(_ token: String) {
         guard let data = token.data(using: .utf8) else { return }
         Task.detached(priority: .utility) {
-            Self.saveToKeychainStatic(data: data, key: Self.tokenKeychainKey)
+            KeychainHelper.save(data: data, key: kTokenKeychainKey)
         }
     }
 
     private func saveUsernameAsync(_ username: String) {
         guard let data = username.data(using: .utf8) else { return }
         Task.detached(priority: .utility) {
-            Self.saveToKeychainStatic(data: data, key: Self.usernameKeychainKey)
+            KeychainHelper.save(data: data, key: kUsernameKeychainKey)
         }
-    }
-
-    // MARK: - Static Keychain Operations (no actor isolation)
-
-    private static func saveToKeychainStatic(data: Data, key: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecValueData as String: data
-        ]
-
-        // Delete existing item first
-        SecItemDelete(query as CFDictionary)
-
-        // Add new item
-        SecItemAdd(query as CFDictionary, nil)
-    }
-
-    private static func deleteFromKeychainStatic(key: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key
-        ]
-        SecItemDelete(query as CFDictionary)
     }
 
     /// Call this after app is fully launched to refresh user info

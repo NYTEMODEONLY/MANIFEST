@@ -49,6 +49,7 @@ final class ProjectStore {
 
     /// Filtered and sorted projects based on current sort option
     var displayedProjects: [Project] {
+        print("📦 [ProjectStore] displayedProjects computed - projects:\(projects.count) searchText:\(searchText)")
         let filtered = searchText.isEmpty
             ? projects
             : projects.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
@@ -81,13 +82,17 @@ final class ProjectStore {
     // MARK: - Initialization
 
     init() {
-        // Don't do anything heavy in init
-        // Restore is triggered by the view
+        print("📦 [ProjectStore] init()")
     }
 
     /// Call this once the app is ready to restore previous session
     func restoreIfNeeded() {
-        guard !hasRootFolder && !isScanning else { return }
+        print("📦 [ProjectStore] restoreIfNeeded() - hasRootFolder:\(hasRootFolder) isScanning:\(isScanning)")
+        guard !hasRootFolder && !isScanning else {
+            print("📦 [ProjectStore] restoreIfNeeded() - early return")
+            return
+        }
+        print("📦 [ProjectStore] restoreIfNeeded() - launching restore task")
         Task {
             await restoreSavedFolder()
         }
@@ -212,14 +217,21 @@ final class ProjectStore {
     // MARK: - Private Methods
 
     private func restoreSavedFolder() async {
+        print("📦 [ProjectStore] restoreSavedFolder() started")
         if let url = bookmarkManager.restoreBookmark() {
+            print("📦 [ProjectStore] restoreSavedFolder() - got bookmark URL")
             rootFolderURL = url
             await scan()
         }
+        print("📦 [ProjectStore] restoreSavedFolder() complete")
     }
 
     private func scan() async {
-        guard let url = rootFolderURL else { return }
+        print("📦 [ProjectStore] scan() started")
+        guard let url = rootFolderURL else {
+            print("📦 [ProjectStore] scan() - no rootFolderURL, returning")
+            return
+        }
 
         isScanning = true
         scanProgress = 0.0
@@ -238,11 +250,14 @@ final class ProjectStore {
                     self?.scanProgress = progress
                 }
             )
+            print("📦 [ProjectStore] scan() - found \(projects.count) projects")
         } catch {
+            print("📦 [ProjectStore] scan() - error: \(error)")
             errorMessage = "Scan failed: \(error.localizedDescription)"
         }
 
         isScanning = false
+        print("📦 [ProjectStore] scan() complete - isScanning=false")
     }
 }
 

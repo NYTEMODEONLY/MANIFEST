@@ -3,10 +3,11 @@ import SwiftUI
 /// Main content view with NavigationSplitView
 struct ContentView: View {
     @Environment(ProjectStore.self) private var store
-    @Environment(GitHubAuth.self) private var gitHubAuth
     @State private var showingSettings = false
+    @State private var hasRestoredAuth = false
 
     var body: some View {
+        let _ = print("📱 [ContentView] body evaluated")
         @Bindable var store = store
 
         NavigationSplitView {
@@ -16,7 +17,7 @@ struct ContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
-            // GitHub account status (leading)
+            // GitHub account status (leading) - uses its own environment
             ToolbarItem(placement: .navigation) {
                 GitHubAccountButton {
                     showingSettings = true
@@ -57,10 +58,20 @@ struct ContentView: View {
             SettingsView()
         }
         .onAppear {
+            print("📱 [ContentView] onAppear")
             // Restore previous session after view is ready
             store.restoreIfNeeded()
-            // Restore GitHub auth session (async, won't block)
-            gitHubAuth.restoreSession()
+            print("📱 [ContentView] onAppear complete")
+        }
+        // Use task to restore GitHub auth ONCE, outside of body observation
+        .task {
+            guard !hasRestoredAuth else { return }
+            hasRestoredAuth = true
+            // Small delay to let view settle
+            try? await Task.sleep(for: .milliseconds(100))
+            await MainActor.run {
+                // Get auth from environment indirectly via the button's restore
+            }
         }
         .overlay {
             // Scanning overlay
@@ -120,30 +131,25 @@ private struct ScanningOverlay: View {
 
 private struct GitHubAccountButton: View {
     @Environment(GitHubAuth.self) private var auth
+    @State private var hasRestored = false
     let action: () -> Void
 
     var body: some View {
+        let _ = print("🔘 [GitHubAccountButton] body evaluated - isAuthenticated:\(auth.isAuthenticated) isAuthenticating:\(auth.isAuthenticating)")
         Button(action: action) {
             HStack(spacing: 6) {
                 if auth.isAuthenticated {
-                    // Show avatar or user icon
-                    AsyncImage(url: auth.avatarURL) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Image(systemName: "person.circle.fill")
-                            .foregroundStyle(.green)
-                    }
-                    .frame(width: 20, height: 20)
-                    .clipShape(Circle())
+                    // Show simple icon instead of AsyncImage to avoid re-render loop
+                    Image(systemName: "person.circle.fill")
+                        .foregroundStyle(.green)
+                        .frame(width: 20, height: 20)
 
                     Text(auth.username ?? "GitHub")
                         .font(.caption)
-                } else if auth.isAuthenticating {
+                } else if auth.isAuthenticating || auth.isRestoringSession {
                     ProgressView()
                         .scaleEffect(0.6)
-                    Text("Signing in...")
+                    Text("...")
                         .font(.caption)
                 } else {
                     Image(systemName: "person.crop.circle.badge.questionmark")
@@ -156,6 +162,12 @@ private struct GitHubAccountButton: View {
         }
         .buttonStyle(.plain)
         .help(auth.isAuthenticated ? "GitHub: \(auth.username ?? "Connected")" : "Sign in to GitHub")
+        .task {
+            // Restore session once when button appears
+            guard !hasRestored else { return }
+            hasRestored = true
+            auth.restoreSession()
+        }
     }
 }
 

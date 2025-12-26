@@ -5,6 +5,7 @@ struct SidebarView: View {
     @Environment(ProjectStore.self) private var store
 
     var body: some View {
+        let _ = print("📋 [SidebarView] body evaluated - hasProjects:\(store.hasProjects)")
         Group {
             if store.hasProjects {
                 ProjectListView()
@@ -36,6 +37,7 @@ private struct ProjectListView: View {
     @Environment(ProjectStore.self) private var store
 
     var body: some View {
+        let _ = print("📋 [ProjectListView] body evaluated - projectCount:\(store.projectCount) selectedProject:\(store.selectedProject?.name ?? "nil")")
         @Bindable var store = store
 
         List(selection: $store.selectedProject) {
